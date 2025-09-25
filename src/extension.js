@@ -8,6 +8,8 @@ import { Extension, InjectionManager } from 'resource:///org/gnome/shell/extensi
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Keyboard from 'resource:///org/gnome/shell/ui/keyboard.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import * as InputSourceManager from 'resource:///org/gnome/shell/ui/status/keyboard.js';
+import IBus from 'gi://IBus';
 
 const A11Y_APPLICATIONS_SCHEMA = "org.gnome.desktop.a11y.applications";
 
@@ -58,19 +60,24 @@ function toggleOSK() {
 }
 
 function override_getCurrentGroup() {
-  // Special case for Korean, if Hangul mode is disabled, use the 'us' keymap
-  if (this._currentSource.id === 'hangul') {
-    const inputSourceManager = InputSourceManager.getInputSourceManager();
-    const currentSource = inputSourceManager.currentSource;
-    let prop;
-    for (let i = 0; (prop = currentSource.properties.get(i)) !== null; ++i) {
-      if (prop.get_key() === 'InputMode' &&
-        prop.get_prop_type() === IBus.PropType.TOGGLE &&
-        prop.get_state() !== IBus.PropState.CHECKED)
-        return 'us';
+  try {
+    // Special case for Korean, if Hangul mode is disabled, use the 'us' keymap
+    if (this._currentSource.id === 'hangul') {
+      const inputSourceManager = InputSourceManager.getInputSourceManager();
+      const currentSource = inputSourceManager.currentSource;
+      let prop;
+      for (let i = 0; (prop = currentSource.properties.get(i)) !== null; ++i) {
+        if (prop.get_key() === 'InputMode' &&
+          prop.get_prop_type() === IBus.PropType.TOGGLE &&
+          prop.get_state() !== IBus.PropState.CHECKED)
+          return 'us';
+      }
     }
+    return this._currentSource.xkbId;
+  } catch (e) {
+    console.warn('Enhanced OSK: Error in getCurrentGroup override:', e);
+    return this._currentSource?.xkbId || 'us';
   }
-  return this._currentSource.xkbId;
 }
 
 // Extension
@@ -127,7 +134,19 @@ export default class enhancedosk extends Extension {
     });
 
     Main.keyboard._syncEnabled();
-    Main.keyboard._bottomDragAction.enabled = true;
+    // Fix for GNOME 49: Try to enable drag action if available
+    try {
+      if (Main.keyboard._bottomDragAction) {
+        Main.keyboard._bottomDragAction.enabled = true;
+      } else {
+        // GNOME 49+: Look for alternative gesture API
+        if (Main.keyboard._keyboardManager?._bottomDragAction) {
+          Main.keyboard._keyboardManager._bottomDragAction.enabled = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Enhanced OSK: Could not enable bottom drag action:', e);
+    }
 
     Main.layoutManager.addTopChrome(Main.layoutManager.keyboardBox, {
       affectsStruts: settings.get_boolean("resize-desktop"),
@@ -160,7 +179,19 @@ export default class enhancedosk extends Extension {
     this.disable_overrides();
 
     Main.keyboard._syncEnabled();
-    Main.keyboard._bottomDragAction.enabled = true;
+    // Fix for GNOME 49: Try to enable drag action if available
+    try {
+      if (Main.keyboard._bottomDragAction) {
+        Main.keyboard._bottomDragAction.enabled = true;
+      } else {
+        // GNOME 49+: Look for alternative gesture API
+        if (Main.keyboard._keyboardManager?._bottomDragAction) {
+          Main.keyboard._keyboardManager._bottomDragAction.enabled = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Enhanced OSK: Could not enable bottom drag action:', e);
+    }
 
     Main.layoutManager.addTopChrome(Main.layoutManager.keyboardBox);
   }
